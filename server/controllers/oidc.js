@@ -18,6 +18,8 @@ const oidcSignIn = async (ctx) => {
   const { state } = ctx.query;
   const { OIDC_CLIENT_ID, OIDC_REDIRECT_URI, OIDC_SCOPES, OIDC_AUTHORIZATION_ENDPOINT } = configValidation();
 
+  console.log(`Starting OIDC sign-in process. State: ${state}`);
+
   const authorizationUrl = `${OIDC_AUTHORIZATION_ENDPOINT}?response_type=code&client_id=${OIDC_CLIENT_ID}&redirect_uri=${OIDC_REDIRECT_URI}&scope=${OIDC_SCOPES}&state=${state}`;
 
   ctx.redirect(authorizationUrl);
@@ -31,18 +33,22 @@ const oidcSignInCallback = async (ctx) => {
   const oauthService = strapi.plugin('strapi-plugin-sso').service('oauth')
   const roleService = strapi.plugin('strapi-plugin-sso').service('role')
 
-  if (!ctx.query.code) {
+  const code = ctx.query.code;
+  console.log(`Received authorization code in callback: ${code}`);
+
+  if (!code) {
     return ctx.send(oauthService.renderSignUpError(`code Not Found`))
   }
 
   const params = new URLSearchParams();
-  params.append('code', ctx.query.code);
+  params.append('code', code);
   params.append('client_id', config['OIDC_CLIENT_ID']);
   params.append('client_secret', config['OIDC_CLIENT_SECRET']);
   params.append('redirect_uri', config['OIDC_REDIRECT_URI']);
   params.append('grant_type', config['OIDC_GRANT_TYPE']);
 
   try {
+    console.log('Attempting to exchange authorization code for tokens');
     const response = await httpClient.post(config['OIDC_TOKEN_ENDPOINT'], params, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -51,6 +57,7 @@ const oidcSignInCallback = async (ctx) => {
 
     let userInfoEndpointHeaders = {};
     let userInfoEndpointParameters = `?access_token=${response.data.access_token}`;
+    console.log(`Receive token as ${response.data.access_token}`);
 
     if (config["OIDC_USER_INFO_ENDPOINT_WITH_AUTH_HEADER"]) {
       userInfoEndpointHeaders = {
@@ -60,6 +67,7 @@ const oidcSignInCallback = async (ctx) => {
     }
 
     const userInfoEndpoint = `${config["OIDC_USER_INFO_ENDPOINT"]}${userInfoEndpointParameters}`;
+    console.log(`Requesting user info from endpoint: ${userInfoEndpoint}`);
 
     const userResponse = await httpClient.get(
       userInfoEndpoint,
